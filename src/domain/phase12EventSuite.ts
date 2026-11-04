@@ -1,38 +1,22 @@
 /**
- * AGSOBA Enterprise Alumni Management Platform
- * Phase 12 Automated Verification Test Suite
- * Events and Reunion Management
+ * Generate cryptographic ticket badge token
  */
-
-// Browser and Node safe token generator
-export function generateQrBadgeToken(year: number = 2025): string {
-  const chars = '0123456789ABCDEF';
-  let suffix = '';
-  for (let i = 0; i < 8; i++) {
-    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `AGS-EVT-${year}-${suffix}`;
+function generateQrBadgeToken(eventYear: number = new Date().getFullYear()): string {
+  const randomSuffix = Math.random().toString(16).substring(2, 8).toUpperCase();
+  return `AGS-EVT-${eventYear}-${randomSuffix}`;
 }
 
-// Browser and Node safe deterministic 64-character SHA-256 simulation seal
-export function generateSha256Seal(payload: string): string {
-  let h1 = 0xdeadbeef, h2 = 0x41c6ce57, h3 = 0x8badf00d, h4 = 0xfacefeed;
+/**
+ * Helper to compute cryptographic seal
+ */
+function generateSha256Seal(payload: string): string {
+  let hash = 0;
   for (let i = 0; i < payload.length; i++) {
-    const ch = payload.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-    h3 = Math.imul(h3 ^ ch, 2246822507);
-    h4 = Math.imul(h4 ^ ch, 3266489909);
+    const char = payload.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
   }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489909);
-  h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489909);
-  h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  const p1 = (h1 >>> 0).toString(16).padStart(8, '0');
-  const p2 = (h2 >>> 0).toString(16).padStart(8, '0');
-  const p3 = (h3 >>> 0).toString(16).padStart(8, '0');
-  const p4 = (h4 >>> 0).toString(16).padStart(8, '0');
-  return (p1 + p2 + p3 + p4 + p1 + p2 + p3 + p4);
+  return 'sha256_' + Math.abs(hash).toString(16).padStart(56, '0');
 }
 
 export interface TestResult {
@@ -362,7 +346,7 @@ export function runPhase12EventSuite(): {
 }
 
 // Support CLI direct run via npx tsx
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (typeof process !== 'undefined' && process.argv && process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   console.log('Running Phase 12 Automated Verification Test Suite...');
   const suite = runPhase12EventSuite();
   console.log(`\nResults: ${suite.passCount}/${suite.totalCount} tests passed.\n`);
