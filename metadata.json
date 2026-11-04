@@ -1,0 +1,6 @@
+{
+  "name": "AGSOBA Enterprise Alumni Platform",
+  "description": "Multi-tenant enterprise alumni association and federated class set management platform for Abeokuta Grammar School Old Boys Association (AGSOBA).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

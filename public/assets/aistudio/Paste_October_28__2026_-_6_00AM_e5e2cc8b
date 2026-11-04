@@ -1,0 +1,883 @@
+PROJECT: AGSOBA ENTERPRISE ALUMNI MANAGEMENT PLATFORM
+
+MASTER IMPLEMENTATION DIRECTIVE
+
+Build a production-grade, secure, scalable, multi-school-capable Old Students' Association Management Platform, initially configured for Abeokuta Grammar School Old Boys Association (AGSOBA), Abeokuta, Ogun State, Nigeria.
+
+The platform must provide a comprehensive Class Set Portal through which each class set manages its members, leadership, communications, meetings, events, finances, welfare, projects, and historical records, while the central alumni association provides oversight and enforces common governance, security, financial, and operational standards.
+
+This is a real software implementation project, not a UI demonstration.
+
+The implementation must proceed through the 20 controlled production phases specified in this prompt. Do not attempt to implement all phases simultaneously.
+
+Execute only the phase explicitly authorised by the user. At the end of that phase, report the implementation evidence, tests, outstanding dependencies, and readiness for the next phase.
+
+Do not claim a feature is production-ready merely because its user interface exists.
+
+---
+
+1. PROJECT IDENTITY
+
+Initial organisation:
+
+Abeokuta Grammar School Old Boys Association (AGSOBA).
+
+Initial school:
+
+Abeokuta Grammar School, Abeokuta, Ogun State, Nigeria.
+
+The platform must be configurable so that other schools and their alumni associations can subsequently use the same underlying application without rewriting its core functionality.
+
+Do not hard-code AGSOBA as the only possible school or association.
+
+AGSOBA is the initial tenant and brand configuration, not an architectural limitation.
+
+Use the following as the initial configurable identity:
+
+- Association name: Abeokuta Grammar School Old Boys Association.
+- Association acronym: AGSOBA.
+- School name: Abeokuta Grammar School.
+- Location: Abeokuta, Ogun State, Nigeria.
+- Country: Nigeria.
+- Default currency: NGN.
+- Default timezone: Africa/Lagos.
+- Historical class set identifier format: AGSOBA YYZZ, where YY represents the admission year's final two digits and ZZ represents the graduation year's final two digits.
+- Example: Admission in 1983 and graduation in 1988 produces the official class set identifier AGSOBA 8388.
+
+The school name, association name, acronym, logo, colours, typography, contact details, domain configuration, historical naming convention, and relevant policies must be configurable through authorised administrative interfaces.
+
+Do not embed school branding throughout the application code.
+
+Store tenant-specific identity and configuration in the appropriate database structures and expose them through a validated configuration service.
+
+Changes to branding must not require modifying application source code.
+
+---
+
+2. NON-NEGOTIABLE ENGINEERING PRINCIPLES
+
+2.1 Real implementation only
+
+Do not create mock implementations, fake integrations, hard-coded demonstration records presented as genuine data, or buttons that merely simulate successful operations.
+
+Do not use:
+
+- Simulated payment confirmations.
+- Fake authentication success.
+- Hard-coded dashboard statistics presented as live data.
+- Fake member directories presented as real records.
+- In-memory arrays as substitutes for persistent production data.
+- Placeholder API responses masquerading as completed integrations.
+- Frontend-only authorisation.
+- Mock financial balances.
+- Simulated file uploads.
+- Fake notification delivery.
+- Artificial success messages when backend operations fail.
+
+Synthetic data may be used in a clearly separated development or test environment, but it must never be confused with production records.
+
+2.2 Missing dependencies
+
+When an external service requires credentials, account configuration, domain verification, an approved contract, or another dependency:
+
+1. Identify the dependency.
+2. Document its exact configuration requirements.
+3. Implement the real integration interface and server-side workflow where feasible.
+4. Validate configuration before enabling the dependent feature.
+5. Display an honest unavailable, pending configuration, or failed state when the dependency is not operational.
+6. Provide actionable diagnostic information to authorised administrators without exposing secrets.
+
+Never report an external operation as successful until the result has been verified.
+
+2.3 No premature completion claims
+
+A phase is complete only when its defined acceptance criteria have been met and supported by evidence.
+
+If some criteria remain unmet, report the phase as incomplete or partially complete.
+
+Do not advance to the next phase without the required verification and user authorisation.
+
+2.4 Preserve existing work
+
+If this project is opened in an existing repository:
+
+- Inspect the current project before modifying it.
+- Identify the actual framework, application structure, database configuration, authentication system, existing components, and deployment configuration.
+- Reuse functioning components where appropriate.
+- Do not replace existing working architecture merely for convenience.
+- Do not overwrite unrelated files.
+- Do not invent repository paths or configuration values.
+- Avoid destructive database operations.
+- Produce explicit migrations and a rollback or recovery strategy where practical.
+
+If this is a new project, establish a coherent production architecture before implementation.
+
+2.5 Maintainable implementation
+
+Use strict typing, reusable components, validated data contracts, explicit error handling, automated tests, secure configuration management, and documented architectural decisions.
+
+Avoid monolithic components, duplicated business logic, excessive abstraction, and unnecessary microservices.
+
+Prefer a modular application with clearly separated business domains and server-side enforcement.
+
+2.6 Evidence-based development
+
+For every phase, provide:
+
+- Files created or modified.
+- Database migrations created or applied.
+- Backend operations implemented.
+- Frontend operations connected to real backend functions.
+- Automated tests executed.
+- Actual test results.
+- Security controls implemented.
+- Environment variables or external dependencies required.
+- Known limitations.
+- Acceptance criteria passed and failed.
+- Remaining work.
+
+Never invent test results or claim tests were executed when they were not.
+
+---
+
+3. REQUIRED ARCHITECTURAL MODEL
+
+Use a multi-tenant architecture from the beginning.
+
+The primary hierarchy should be:
+
+Platform
+└── School/Tenant
+└── Alumni Association
+└── Class Set
+├── Membership
+├── Executive
+├── Communications
+├── Meetings
+├── Events
+├── Finance
+├── Welfare
+├── Projects
+└── Heritage Archive
+
+The design must allow the actual organisational relationship between a school and its alumni association to be configured. Do not assume that every school has exactly one alumni organisation or that every alumni organisation uses the same governance rules.
+
+Every tenant-owned record must have a clearly defined ownership and authorisation model.
+
+Implement tenant isolation in backend operations and database access policies.
+
+A user interface filter is not a security boundary.
+
+Use one canonical identity record per person within the appropriate platform identity model. Do not duplicate a person's entire identity record for every class set membership.
+
+Separate:
+
+- Authentication identity.
+- Personal profile.
+- School attendance.
+- Alumni verification.
+- Class set membership.
+- Association membership.
+- Financial standing.
+- Executive appointment.
+- Permissions.
+
+These are distinct concepts and must not be collapsed into a single user-role or membership-status field.
+
+---
+
+4. CLASS SET DEFINITION: CRITICAL BUSINESS RULE
+
+The class set is defined by the combination of the person's school admission year and school graduation year.
+
+For AGSOBA, the default official class set identifier format is:
+
+AGSOBA YYZZ
+
+Where:
+
+- YY = the final two digits of the admission year.
+- ZZ = the final two digits of the graduation year.
+
+Example:
+
+Admission year: 1983.
+Graduation year: 1988.
+Official class set identifier: AGSOBA 8388.
+
+The identifier must be derived from the configured association acronym and the two-year combination.
+
+Do not use graduation year alone to identify a class set.
+
+Do not use admission year alone to identify a class set.
+
+The database must retain the complete four-digit admission and graduation years as authoritative values. The shortened identifier is a human-readable label, not the sole source of truth.
+
+4.1 Membership eligibility
+
+The class set must support:
+
+1. Students admitted in 1983 who completed school in 1988.
+2. Students admitted in 1983 who left before graduation, where the association recognises their membership.
+3. Students admitted in 1983 who transferred to another school before graduation, where the association recognises their membership.
+4. Students admitted after 1983 who transferred into Abeokuta Grammar School and completed school in 1988.
+5. Students admitted and graduated in the same calendar year, if supported by verified historical records and the association's approved rules.
+6. Members whose exact admission or graduation dates are unknown and require historical review.
+7. Members whose school attendance is established but whose class set placement remains disputed.
+
+Do not automatically assume that everyone who left midway qualifies for full class set membership.
+
+The system must allow the association to define eligibility and participation categories through approved policy.
+
+A person who left midway must not be falsely assigned a graduation year of 1988 merely because their original classmates graduated that year.
+
+If the association decides to recognise that person within AGSOBA 8388, record the basis of that recognition and the applicable membership category separately from the person's actual attendance history.
+
+Likewise, a transfer student who joined after 1983 and graduated in 1988 must retain their actual admission history while being eligible for AGSOBA 8388 under the approved rules.
+
+The system must not fabricate school attendance history to force a person into a class set.
+
+4.2 Full-year collision prevention
+
+Two-digit years can become ambiguous across centuries.
+
+The database must preserve full years and use them for uniqueness constraints.
+
+For example, 1883–1888 and 1983–1988 must not collide merely because both reduce to the suffix 8388.
+
+The human-readable identifier may be augmented or disambiguated when necessary.
+
+4.3 Canonical class set record
+
+The class set data model must include at least:
+
+- Class set ID.
+- Tenant ID.
+- Association ID.
+- Official display name.
+- Official class set identifier.
+- Full admission year.
+- Full graduation year.
+- Class set description.
+- Eligibility policy reference.
+- Membership categories.
+- Status.
+- Creation date.
+- Approved leadership reference.
+- Branding configuration reference, where needed.
+
+The database must prevent duplicate class set records for the same configured school, association, and full-year combination unless an explicitly approved exceptional configuration requires otherwise.
+
+4.4 Membership categories
+
+Support configurable categories such as:
+
+- Standard cohort alumnus.
+- Midway leaver recognised by policy.
+- Transfer entrant recognised by policy.
+- Specially recognised alumnus.
+- Pending classification.
+- Disputed classification.
+- Other approved categories.
+
+Do not assume that these categories have identical voting, dues, office-holding, or event participation rights.
+
+Those rights must be controlled by the association's approved constitution and policy.
+
+---
+
+5. GOVERNANCE MODEL
+
+Implement federated governance.
+
+The central association establishes common standards, while authorised class set executives manage their own activities within those standards.
+
+The central association must not need to perform routine class set operations on behalf of every class set.
+
+At the same time, class set executives must not be able to bypass central policies, tenant security, financial controls, or mandatory reporting requirements.
+
+Implement three principal governance scopes:
+
+Platform scope
+
+Controls platform-level configuration, tenant provisioning, technical administration, and platform security.
+
+Platform technical administrators must not automatically have unrestricted access to private welfare records or confidential communications.
+
+Association scope
+
+Controls association-wide policies, class set recognition, governance standards, authorised oversight, association-wide reporting, and escalation procedures.
+
+Class set scope
+
+Controls the class set's authorised membership workflows, leadership, communications, meetings, events, projects, and financial activities within delegated authority.
+
+Every privileged operation must verify the user's current role, scope, and permissions on the server.
+
+Executive permissions must support term dates, suspension, revocation, and orderly succession.
+
+A person may hold multiple offices, but permissions must be explicitly granted and auditable.
+
+---
+
+6. SECURITY REQUIREMENTS
+
+Implement security from the first phase, not as a final cosmetic exercise.
+
+Requirements include:
+
+- Secure authentication.
+- Verified email where required.
+- Appropriate multi-factor authentication for privileged accounts.
+- Server-side authorisation.
+- Database-level tenant isolation.
+- Least-privilege access.
+- Secure session handling.
+- Rate limiting.
+- Input validation.
+- Output encoding.
+- CSRF protection where applicable.
+- Secure file uploads.
+- Private storage for confidential records.
+- Secrets stored outside source code.
+- Audit logging.
+- Database backups.
+- Tested restoration procedures.
+- Appropriate retention and deletion policies.
+- Incident response procedures.
+
+If Supabase is used, implement and test Row Level Security policies for all relevant exposed tables.
+
+Do not expose service-role credentials, privileged database credentials, private API keys, or payment secrets in browser code.
+
+Any privileged server-side function must independently verify authentication and authorisation.
+
+Never rely on hiding a button to prevent unauthorised operations.
+
+Financial transactions, welfare cases, formal votes, membership disputes, and executive appointments require especially careful access controls.
+
+---
+
+7. FINANCIAL INTEGRITY REQUIREMENTS
+
+Treat financial records as auditable business records.
+
+Implement separate concepts for:
+
+- Dues obligations.
+- Payments.
+- Contributions.
+- Pledges.
+- Refunds.
+- Expenses.
+- Allocations.
+- Reconciliation.
+- Financial approvals.
+- Accounting periods.
+- Project funds.
+- Welfare funds.
+- Event budgets.
+
+Do not treat a pledge as money received.
+
+Do not treat an initiated payment as a successful payment.
+
+Do not allow the browser to declare a payment successful without trusted server-side verification.
+
+Use unique transaction references and idempotent payment processing.
+
+Do not silently overwrite completed financial transactions.
+
+Use correction, reversal, or adjustment records that preserve the audit history.
+
+Financial approval and payment execution must follow configurable association policies.
+
+Support NGN initially, while avoiding unnecessary hard-coding that would prevent future currency configuration.
+
+Do not store raw payment card details.
+
+---
+
+8. REQUIRED USER EXPERIENCE
+
+Provide a polished, accessible, mobile-first interface suitable for alumni across multiple generations.
+
+Use a professional, heritage-conscious visual identity appropriate to Abeokuta Grammar School and AGSOBA.
+
+The initial branding should be configurable, not permanently embedded.
+
+The application must provide distinct interfaces for:
+
+- Public visitors.
+- Registered alumni.
+- Class set executives.
+- Association administrators.
+- Financial officers.
+- Welfare officers.
+- Project coordinators.
+- Platform administrators.
+
+The class set portal should provide a coherent navigation system covering:
+
+1. Dashboard.
+2. Members.
+3. Communications.
+4. Meetings and governance.
+5. Events and reunions.
+6. Finance.
+7. Welfare.
+8. Projects.
+9. Archives.
+10. Professional networking.
+11. Reports.
+12. Administration.
+
+Only authorised modules and actions should be accessible to each role.
+
+All forms must have meaningful validation, loading states, error states, empty states, and confirmation messages based on actual backend results.
+
+A successful-looking screen is not evidence of successful persistence.
+
+---
+
+9. REQUIRED TESTING STANDARDS
+
+Create an automated test strategy covering:
+
+- Unit tests.
+- Integration tests.
+- Database policy tests.
+- Authentication tests.
+- Authorisation tests.
+- Tenant-isolation tests.
+- Membership eligibility tests.
+- Class set identifier tests.
+- Duplicate prevention tests.
+- Financial integrity tests.
+- Workflow tests.
+- File access tests.
+- End-to-end tests.
+- Accessibility checks.
+- Production build checks.
+
+Use synthetic fixtures in a dedicated test environment.
+
+Test both permitted and forbidden operations.
+
+At minimum, verify that:
+
+- One class set cannot access another class set's restricted records without permission.
+- One tenant cannot access another tenant's private records.
+- An ordinary alumnus cannot assign themselves an executive role.
+- An unauthorised coordinator cannot change association-wide policy.
+- A payment cannot be marked successful solely by a client request.
+- A confidential welfare case cannot be read by ordinary members.
+- A class set member cannot change the approved financial ledger without permission.
+- Revoked executive access no longer authorises privileged operations.
+- A historical record is not silently lost when an alumnus's profile is corrected or merged.
+
+Do not report a security control as implemented until its enforcement and tests are demonstrated.
+
+---
+
+10. TWENTY CONTROLLED PRODUCTION PHASES
+
+Implement the project in the following sequence.
+
+Only the currently authorised phase may be implemented.
+
+Each phase must have a defined scope, dependencies, acceptance criteria, and verification report.
+
+PHASE 1 — Repository, Requirements, and Architecture Audit
+
+Inspect the existing application or establish the new project's baseline.
+
+Deliver:
+
+- Current architecture report.
+- Framework and dependency inventory.
+- Database and authentication assessment.
+- Domain model.
+- Tenant isolation strategy.
+- Class set identity specification.
+- Governance and permission model.
+- Security threat model.
+- Data classification.
+- Architectural decision records.
+- Implementation backlog.
+- Dependency register.
+
+Do not implement the entire application in this phase.
+
+Acceptance criteria:
+
+The proposed architecture explicitly supports configurable schools, associations, admission/graduation class sets, federated governance, financial integrity, and private welfare records.
+
+PHASE 2 — Core Infrastructure and Database Foundation
+
+Implement the database schema, migrations, configuration management, foundational services, and development/test environment.
+
+Create the canonical school, association, tenant, identity, profile, attendance, class set, membership, and permission structures.
+
+Establish migration tracking, backup strategy, and environment separation.
+
+Acceptance criteria:
+
+The schema supports the required relationships, constraints, tenant ownership, and class set year combinations.
+
+Migrations can be applied and tested safely.
+
+PHASE 3 — Authentication, Identity, and Access Control
+
+Implement real authentication, session handling, account recovery, profile management, and permission enforcement.
+
+Establish platform, association, and class set scopes.
+
+Implement role assignment, permission checks, and administrative audit events.
+
+Acceptance criteria:
+
+Authentication works against the configured identity provider.
+
+Unauthorised operations fail on the server.
+
+Tenant isolation and privilege boundaries pass automated tests.
+
+PHASE 4 — School and Association Branding Configuration
+
+Implement configurable:
+
+- School name.
+- Association name and acronym.
+- Logos.
+- Colours.
+- Contact information.
+- Domain and public URL configuration.
+- Currency.
+- Timezone.
+- Historical naming conventions.
+- Privacy and communication policies.
+
+Configure AGSOBA as the initial tenant.
+
+Acceptance criteria:
+
+Changing authorised branding configuration updates the interface without source-code changes.
+
+One tenant cannot modify another tenant's branding.
+
+PHASE 5 — Class Set Identity and Eligibility Engine
+
+Implement the full class set identity and membership eligibility model.
+
+Support admission year, graduation year, transfer entrants, midway leavers, exceptional recognition, disputed records, and unknown historical dates.
+
+Implement official identifiers such as AGSOBA 8388.
+
+Retain full-year values as authoritative fields.
+
+Implement configurable eligibility policies and uniqueness constraints.
+
+Acceptance criteria:
+
+All specified class set scenarios are covered by automated tests.
+
+No person is falsely assigned a graduation year or attendance history.
+
+Duplicate class set definitions are prevented according to the approved rules.
+
+PHASE 6 — Alumni Registration, Verification, and Membership Management
+
+Implement registration, membership applications, review queues, class set assignment, membership categories, duplicate detection, approved record imports, and audit trails.
+
+Support authorised class set verification within delegated scope and central association escalation.
+
+Acceptance criteria:
+
+Registration, verification, rejection, correction, and membership assignment persist correctly.
+
+Bulk imports have validation, duplicate review, error reports, and reconciliation.
+
+PHASE 7 — Class Set Executive and Governance Management
+
+Implement office definitions, executive appointments, term dates, nominations, elections where authorised, leadership changes, permissions, and digital handover.
+
+Implement constitution and policy versioning.
+
+Acceptance criteria:
+
+Executive changes are auditable.
+
+Expired or revoked appointments cannot continue authorising privileged actions.
+
+Election and appointment rules are configurable and tested.
+
+PHASE 8 — Member Directory and Profiles
+
+Implement the searchable directory, privacy controls, professional profiles, class set subgroups, and member contact requests.
+
+Implement consent-based geographic aggregation where supported.
+
+Acceptance criteria:
+
+Directory searches return authorised records only.
+
+Private contact information remains private.
+
+Members can update permitted profile fields without changing verified school history improperly.
+
+PHASE 9 — Communications Centre
+
+Implement official announcements, message templates, audience selection, approval workflows, notification preferences, and communication history.
+
+Integrate actual notification providers only when configured.
+
+Acceptance criteria:
+
+Announcements persist and respect permissions.
+
+Delivery status is reported accurately.
+
+Unconfigured providers produce explicit unavailable or pending states.
+
+PHASE 10 — Meetings, Minutes, Resolutions, and Tasks
+
+Implement meeting scheduling, agendas, attendance, draft and approved minutes, resolution registers, action assignments, and overdue-task tracking.
+
+Acceptance criteria:
+
+Meeting records and decisions are persistent and searchable.
+
+Approved resolutions have traceable origins.
+
+Task status changes are auditable.
+
+PHASE 11 — Polls, Surveys, and Formal Voting
+
+Implement informal polls, member surveys, eligibility-controlled voting, secret ballots where required, quorum calculations, result certification, and dispute handling.
+
+Acceptance criteria:
+
+Voting eligibility is enforced on the server.
+
+Votes cannot be duplicated or altered through unauthorised operations.
+
+Confidential ballots do not expose voter choices to unauthorised viewers.
+
+PHASE 12 — Events and Reunion Management
+
+Implement event creation, approvals, invitations, registration, guest rules, attendance, reunion planning, event galleries, and post-event reporting.
+
+Acceptance criteria:
+
+Registrations and attendance are distinct records.
+
+Capacity, deadlines, and cancellation rules are enforced.
+
+Event data persists and is reportable.
+
+PHASE 13 — Financial Management and Payment Integration
+
+Implement dues, contributions, pledges, expenses, accounting classifications, approvals, receipts, payment references, reconciliation, reporting, and financial audit trails.
+
+Integrate the selected payment provider through server-side workflows.
+
+Do not enable real payments until provider configuration and verification are complete.
+
+Acceptance criteria:
+
+Financial transactions are traceable and cannot be silently overwritten.
+
+Payment status is verified server-side.
+
+Duplicate processing is prevented.
+
+Reconciliation reports match the underlying financial records.
+
+PHASE 14 — Confidential Welfare Management
+
+Implement welfare request intake, restricted documents, committee review, decisions, approved assistance, welfare fund records, and case closure.
+
+Acceptance criteria:
+
+Only authorised welfare personnel and explicitly authorised reviewers can access case records.
+
+Welfare payments link to the relevant authorised records.
+
+Sensitive data is excluded from general announcements and unrestricted reports.
+
+PHASE 15 — Projects and Development Initiatives
+
+Implement project proposals, review, approval, budgets, fundraising, contributions, milestones, expenses, progress reports, completion reviews, and project archives.
+
+Support class set projects and properly authorised association-wide projects.
+
+Acceptance criteria:
+
+Project financial records reconcile with the underlying transactions.
+
+Only authorised officers can approve or change project budgets.
+
+Completed projects have traceable approval and reporting records.
+
+PHASE 16 — Digital Heritage Archive and Documents
+
+Implement historical photographs, school publications, class set memories, oral histories, document metadata, search, controlled uploads, permissions, and removal workflows.
+
+Acceptance criteria:
+
+Files are stored persistently.
+
+Access controls are enforced on file retrieval.
+
+Historical items retain provenance and permission metadata.
+
+Private records are not exposed through public URLs.
+
+PHASE 17 — Professional Network, Business Directory, and Mentorship
+
+Implement voluntary business listings, employment opportunities, mentor profiles, mentorship requests, and professional networking workflows.
+
+Acceptance criteria:
+
+Listings are moderated.
+
+Verification claims are accurate.
+
+Mentor participation and contact preferences are respected.
+
+The module works with real persisted records rather than fabricated directory entries.
+
+PHASE 18 — Central Association Oversight and Reporting
+
+Implement the central association dashboard, class set reporting, leadership status, dormant class set monitoring, escalation workflows, policy compliance, and authorised cross-class-set analytics.
+
+Acceptance criteria:
+
+Central officers can perform authorised oversight without unrestricted access to private class set records.
+
+Class set executives retain their delegated operational autonomy.
+
+Association-wide reports are derived from real records.
+
+PHASE 19 — Production Hardening and End-to-End Verification
+
+Conduct security review, permission testing, tenant-isolation testing, accessibility testing, performance assessment, migration validation, backup restoration testing, and end-to-end workflow verification.
+
+Resolve identified release-blocking defects.
+
+Acceptance criteria:
+
+Critical security and financial integrity tests pass.
+
+Known limitations are documented.
+
+No critical release blocker is misrepresented as resolved.
+
+PHASE 20 — Production Deployment and Operational Handover
+
+Prepare production configuration, deployment automation, monitoring, error reporting, backup schedules, operational documentation, administrator training, recovery procedures, and release sign-off.
+
+Deploy only when the required environment configuration, approvals, and acceptance criteria are satisfied.
+
+Acceptance criteria:
+
+The production build deploys successfully.
+
+Health checks pass.
+
+Critical user journeys work against the production backend.
+
+Secrets remain protected.
+
+Monitoring, backup, restoration, and incident response procedures are documented.
+
+The deployment report clearly distinguishes verified production functionality from features awaiting external configuration or later release.
+
+---
+
+11. MANDATORY PHASE EXECUTION PROTOCOL
+
+At the beginning of every phase:
+
+1. Read the master requirements.
+2. Inspect the current implementation.
+3. Identify the exact scope of the authorised phase.
+4. Identify dependencies and existing defects.
+5. Propose a concise implementation plan.
+6. Preserve existing functioning work.
+
+During implementation:
+
+1. Implement only the authorised phase and necessary supporting changes.
+2. Use real backend operations.
+3. Add migrations and automated tests where required.
+4. Avoid unrelated refactoring.
+5. Keep secrets out of source code.
+6. Record any blocker that prevents genuine completion.
+
+At the end of every phase, produce:
+
+A. Implementation summary
+
+What was actually implemented.
+
+B. Changed files
+
+List actual file paths and their purpose.
+
+C. Database changes
+
+List migrations, schema changes, constraints, and policies.
+
+D. Functional evidence
+
+Explain which real workflows were tested and their actual results.
+
+E. Test results
+
+List tests executed, pass/fail counts, and outstanding failures.
+
+F. Security review
+
+Describe the access controls and security tests relevant to the phase.
+
+G. Configuration requirements
+
+List required environment variables, external accounts, secrets, and administrative actions without exposing secret values.
+
+H. Known limitations
+
+Identify incomplete work, missing credentials, unresolved decisions, and unavailable integrations.
+
+I. Acceptance criteria
+
+Mark each criterion as passed, failed, blocked, or not tested.
+
+J. Next-phase recommendation
+
+Explain what must be completed before the next phase can safely begin.
+
+Do not start the next phase automatically.
+
+Wait for the user's explicit instruction to proceed.
+
+---
+
+12. FINAL DIRECTIVE
+
+The objective is to build a real, enterprise-grade alumni management platform whose first implementation is AGSOBA.
+
+The central product is the Class Set Portal.
+
+Its distinguishing capability is the ability to organise each class set around its actual school history, admission year, graduation year, verified membership, elected leadership, finances, activities, welfare, projects, and institutional memory.
+
+The system must support AGSOBA 8388 and other class sets without hard-coding individual cohorts.
+
+It must also support additional schools and associations through configuration and strict tenant isolation.
+
+Prioritise correctness, security, traceability, maintainability, and operational integrity over visual novelty or development speed.
+
+Begin with PHASE 1 ONLY.
+
+Do not implement Phase 2 or any subsequent phase until Phase 1 has been reviewed and explicitly authorised.
