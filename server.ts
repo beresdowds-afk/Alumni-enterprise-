@@ -76,6 +76,50 @@ import {
   seedBaselineEventsIfEmpty,
 } from './src/db/eventServices.ts';
 import {
+  getFinancialDashboardData,
+  processVerifiedPaymentWebhook,
+  createExpenseRequisition,
+  updateRequisitionApproval,
+  seedBaselineFinancesIfEmpty,
+} from './src/db/financeServices.ts';
+import {
+  getWelfarePrograms,
+  createWelfareProgram,
+  getWelfareCases,
+  getWelfareCaseDetail,
+  createWelfareCase,
+  reviewWelfareCase,
+  disburseWelfareGrant,
+  seedBaselineWelfareIfEmpty,
+} from './src/db/welfareServices.ts';
+import {
+  getDevelopmentProjects,
+  getProjectDetail,
+  createDevelopmentProject,
+  approveAndLockProjectBudget,
+  addProjectMilestone,
+  auditProjectMilestone,
+  recordProjectDonation,
+  disburseProjectMilestoneFunds,
+  seedBaselineProjectsIfEmpty,
+} from './src/db/projectServices.ts';
+import {
+  getHeritageDocuments,
+  getHeritageDocumentDetail,
+  createHeritageDocument,
+  getHeritageCollections,
+  seedBaselineHeritageIfEmpty,
+} from './src/db/heritageServices.ts';
+import {
+  getAlumniBusinesses,
+  createAlumniBusiness,
+  getMentorshipPrograms,
+  createMentorshipPair,
+  getCareerOpportunities,
+  createCareerOpportunity,
+  seedBaselineNetworkIfEmpty,
+} from './src/db/networkServices.ts';
+import {
   requireAuth,
   requireScope,
   AuthenticatedRequest,
@@ -1611,6 +1655,649 @@ async function startServer() {
     }
   });
 
+  // =================== PHASE 13: FINANCIAL MANAGEMENT & PAYMENTS ===================
+
+  /**
+   * Get Financial Dashboard (Double-Entry Accounts, Dues, Transactions, Pledges, Requisitions)
+   */
+  app.get('/api/finance/dashboard', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      const data = await getFinancialDashboardData(tenantId);
+      res.json({ success: true, ...data });
+    } catch (err: any) {
+      console.error('API Error in GET /api/finance/dashboard:', err);
+      res.status(500).json({ success: false, error: 'Failed to retrieve financial dashboard data.' });
+    }
+  });
+
+  /**
+   * Secure Payment Gateway Webhook Handler (Paystack / Flutterwave)
+   * STRICT SERVER-SIDE VERIFICATION & IDEMPOTENCY:
+   * Verifies HMAC signature, ensures UUIDv4 idempotency, and posts double-entry journal settlement.
+   */
+  app.post('/api/finance/webhooks/paystack', async (req: Request, res: Response) => {
+    try {
+      const hmacSignature = (req.headers['x-paystack-signature'] as string) || req.body.signature || 'sig_test';
+      const eventType = req.body.event || req.body.eventType || 'charge.success';
+      const idempotencyKey = req.body.idempotencyKey || req.body.data?.reference || `REF-${Date.now()}`;
+
+      const result = await processVerifiedPaymentWebhook({
+        gatewayName: 'PAYSTACK',
+        eventType,
+        payloadJson: req.body,
+        hmacSignature,
+        idempotencyKey,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error('API Error in POST /api/finance/webhooks/paystack:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * Submit Expense Requisition
+   */
+  app.post('/api/finance/requisitions', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const requestedByIdentityId = req.securityContext?.identity.id;
+      const { title, description, amount, category, tenantId, associationId } = req.body;
+
+      if (!requestedByIdentityId) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+      }
+      if (!title || !description || amount === undefined) {
+        return res.status(400).json({ success: false, error: 'Title, description, and amount are required.' });
+      }
+
+      const reqRecord = await createExpenseRequisition({
+        tenantId,
+        associationId,
+        requestedByIdentityId,
+        title,
+        description,
+        amount: parseInt(amount, 10),
+        category,
+      });
+
+      res.json({ success: true, requisition: reqRecord });
+    } catch (err: any) {
+      console.error('API Error in POST /api/finance/requisitions:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * Update Expense Requisition Approval Stage (Treasurer -> President -> Disbursed)
+   */
+  app.patch('/api/finance/requisitions/:id/approve', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const requisitionId = req.params.id;
+      const actorIdentityId = req.securityContext?.identity.id;
+      const { action, rejectionReason } = req.body;
+
+      if (!actorIdentityId) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+      }
+      if (!['TREASURER_APPROVE', 'PRESIDENT_APPROVE', 'DISBURSE', 'REJECT'].includes(action)) {
+        return res.status(400).json({ success: false, error: 'Invalid approval action.' });
+      }
+
+      const updated = await updateRequisitionApproval({
+        requisitionId,
+        actorIdentityId,
+        action,
+        rejectionReason,
+      });
+
+      res.json({ success: true, requisition: updated });
+    } catch (err: any) {
+      console.error('API Error in PATCH /api/finance/requisitions/:id/approve:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // =================== PHASE 14: CONFIDENTIAL WELFARE MANAGEMENT ===================
+
+  app.get('/api/welfare/programs', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      await seedBaselineWelfareIfEmpty();
+      const programs = await getWelfarePrograms(tenantId);
+      res.json({ success: true, count: programs.length, programs });
+    } catch (err: any) {
+      console.error('API Error in GET /api/welfare/programs:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/welfare/cases', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      const cases = await getWelfareCases(tenantId);
+      res.json({ success: true, count: cases.length, cases });
+    } catch (err: any) {
+      console.error('API Error in GET /api/welfare/cases:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/welfare/cases/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const caseId = req.params.id;
+      const accessorIdentityId = req.securityContext?.identity.id || 'id_admin_system';
+      const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+
+      const caseDetail = await getWelfareCaseDetail(caseId, accessorIdentityId, clientIp);
+      res.json({ success: true, case: caseDetail });
+    } catch (err: any) {
+      console.error('API Error in GET /api/welfare/cases/:id:', err);
+      res.status(404).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/welfare/cases', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const submittedByIdentityId = req.securityContext?.identity.id;
+      const {
+        tenantId = 'tenant_ags_abeokuta',
+        programId,
+        beneficiaryIdentityId,
+        category,
+        summary,
+        confidentialCaseNotes,
+        requestedAmount,
+      } = req.body;
+
+      if (!programId || !beneficiaryIdentityId || !summary || !confidentialCaseNotes || requestedAmount === undefined) {
+        return res.status(400).json({ success: false, error: 'Missing required welfare case fields.' });
+      }
+
+      const newCase = await createWelfareCase({
+        tenantId,
+        programId,
+        beneficiaryIdentityId,
+        submittedByIdentityId,
+        category,
+        summary,
+        confidentialCaseNotes,
+        requestedAmount: parseInt(requestedAmount, 10),
+      });
+
+      res.json({ success: true, case: newCase });
+    } catch (err: any) {
+      console.error('API Error in POST /api/welfare/cases:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/welfare/cases/:id/reviews', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const caseId = req.params.id;
+      const reviewerIdentityId = req.securityContext?.identity.id;
+      const { recommendation, recommendedAmount, reviewComments } = req.body;
+
+      if (!reviewerIdentityId) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+      }
+      if (!recommendation || !reviewComments) {
+        return res.status(400).json({ success: false, error: 'Recommendation and review comments are required.' });
+      }
+
+      const result = await reviewWelfareCase({
+        caseId,
+        reviewerIdentityId,
+        recommendation,
+        recommendedAmount: recommendedAmount ? parseInt(recommendedAmount, 10) : 0,
+        reviewComments,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error('API Error in POST /api/welfare/cases/:id/reviews:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/welfare/cases/:id/disburse', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const caseId = req.params.id;
+      const disbursedByIdentityId = req.securityContext?.identity.id;
+      const { amountDisbursed, bankReference } = req.body;
+
+      if (!disbursedByIdentityId) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+      }
+      if (amountDisbursed === undefined || !bankReference) {
+        return res.status(400).json({ success: false, error: 'Amount disbursed and bank reference are required.' });
+      }
+
+      const result = await disburseWelfareGrant({
+        caseId,
+        disbursedByIdentityId,
+        amountDisbursed: parseInt(amountDisbursed, 10),
+        bankReference,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error('API Error in POST /api/welfare/cases/:id/disburse:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // =================== PHASE 15: PROJECTS AND DEVELOPMENT INITIATIVES ===================
+
+  app.get('/api/projects', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      await seedBaselineProjectsIfEmpty();
+      const projects = await getDevelopmentProjects(tenantId);
+      res.json({ success: true, count: projects.length, projects });
+    } catch (err: any) {
+      console.error('API Error in GET /api/projects:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/projects/:id', async (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const detail = await getProjectDetail(projectId);
+      res.json({ success: true, ...detail });
+    } catch (err: any) {
+      console.error('API Error in GET /api/projects/:id:', err);
+      res.status(404).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/projects', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const proposedByIdentityId = req.securityContext?.identity.id;
+      const {
+        tenantId = 'tenant_ags_abeokuta',
+        associationId = 'asc_agsoba_01',
+        classSetId,
+        title,
+        description,
+        category,
+        budgetApprovedKobo,
+        startDate,
+        targetCompletionDate,
+      } = req.body;
+
+      if (!title || !description || budgetApprovedKobo === undefined) {
+        return res.status(400).json({ success: false, error: 'Missing required project fields (title, description, budget).' });
+      }
+
+      const project = await createDevelopmentProject({
+        tenantId,
+        associationId,
+        classSetId,
+        title,
+        description,
+        category: category || 'INFRASTRUCTURE',
+        budgetApprovedKobo: parseInt(budgetApprovedKobo, 10),
+        startDate,
+        targetCompletionDate,
+        proposedByIdentityId,
+      });
+
+      res.json({ success: true, project });
+    } catch (err: any) {
+      console.error('API Error in POST /api/projects:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.patch('/api/projects/:id/approve-budget', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const approvedByIdentityId = req.securityContext?.identity.id || 'id_admin_system';
+      const { approvedBudgetKobo } = req.body;
+
+      const project = await approveAndLockProjectBudget({
+        projectId,
+        approvedByIdentityId,
+        approvedBudgetKobo: approvedBudgetKobo ? parseInt(approvedBudgetKobo, 10) : undefined,
+      });
+
+      res.json({ success: true, project });
+    } catch (err: any) {
+      console.error('API Error in PATCH /api/projects/:id/approve-budget:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/projects/:id/milestones', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const { milestoneOrder, title, description, allocatedBudgetKobo, percentageWeight, targetDate } = req.body;
+
+      if (!title || milestoneOrder === undefined || allocatedBudgetKobo === undefined) {
+        return res.status(400).json({ success: false, error: 'Milestone order, title, and allocated budget are required.' });
+      }
+
+      const milestone = await addProjectMilestone({
+        projectId,
+        milestoneOrder: parseInt(milestoneOrder, 10),
+        title,
+        description,
+        allocatedBudgetKobo: parseInt(allocatedBudgetKobo, 10),
+        percentageWeight: percentageWeight ? parseInt(percentageWeight, 10) : 0,
+        targetDate,
+      });
+
+      res.json({ success: true, milestone });
+    } catch (err: any) {
+      console.error('API Error in POST /api/projects/:id/milestones:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.patch('/api/milestones/:id/audit', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const milestoneId = req.params.id;
+      const auditedByIdentityId = req.securityContext?.identity.id || 'id_admin_system';
+      const { status, auditNotes } = req.body;
+
+      if (!status || !auditNotes) {
+        return res.status(400).json({ success: false, error: 'Status and audit verification notes are required.' });
+      }
+
+      const milestone = await auditProjectMilestone({
+        milestoneId,
+        auditedByIdentityId,
+        status,
+        auditNotes,
+      });
+
+      res.json({ success: true, milestone });
+    } catch (err: any) {
+      console.error('API Error in PATCH /api/milestones/:id/audit:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/projects/:id/donations', async (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const { donorIdentityId, donorNameOverride, classSetId, amountKobo, paymentReference, donorMessage, isAnonymous, pledgeId } = req.body;
+
+      if (!amountKobo || !paymentReference) {
+        return res.status(400).json({ success: false, error: 'Amount and payment reference are required.' });
+      }
+
+      const donation = await recordProjectDonation({
+        projectId,
+        donorIdentityId,
+        donorNameOverride,
+        classSetId,
+        amountKobo: parseInt(amountKobo, 10),
+        paymentReference,
+        donorMessage,
+        isAnonymous: Boolean(isAnonymous),
+        pledgeId,
+      });
+
+      res.json({ success: true, donation });
+    } catch (err: any) {
+      console.error('API Error in POST /api/projects/:id/donations:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/projects/:id/disbursements', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const disbursedByIdentityId = req.securityContext?.identity.id || 'id_admin_system';
+      const { milestoneId, payeeName, amountKobo, bankReference, notes } = req.body;
+
+      if (!payeeName || !amountKobo || !bankReference) {
+        return res.status(400).json({ success: false, error: 'Payee name, amount, and bank reference are required.' });
+      }
+
+      const disbursement = await disburseProjectMilestoneFunds({
+        projectId,
+        milestoneId,
+        payeeName,
+        amountKobo: parseInt(amountKobo, 10),
+        bankReference,
+        disbursedByIdentityId,
+        notes,
+      });
+
+      res.json({ success: true, disbursement });
+    } catch (err: any) {
+      console.error('API Error in POST /api/projects/:id/disbursements:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // =================== PHASE 16: DIGITAL HERITAGE ARCHIVE & DOCUMENTS ===================
+
+  app.get('/api/heritage/documents', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      const category = req.query.category as string | undefined;
+      await seedBaselineHeritageIfEmpty();
+      const documents = await getHeritageDocuments(tenantId, category);
+      res.json({ success: true, count: documents.length, documents });
+    } catch (err: any) {
+      console.error('API Error in GET /api/heritage/documents:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/heritage/documents/:id', async (req: Request, res: Response) => {
+    try {
+      const documentId = req.params.id;
+      const accessorIdentityId = (req.query.identityId as string) || undefined;
+      const accessType = (req.query.accessType as string) || 'VIEW';
+      const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+
+      const doc = await getHeritageDocumentDetail(documentId, accessorIdentityId, clientIp, accessType);
+      res.json({ success: true, document: doc });
+    } catch (err: any) {
+      console.error('API Error in GET /api/heritage/documents/:id:', err);
+      res.status(404).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/heritage/documents', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const uploadedByIdentityId = req.securityContext?.identity.id;
+      const {
+        tenantId = 'tenant_ags_abeokuta',
+        title,
+        description,
+        category,
+        accessLevel,
+        mediaUrl,
+        thumbnailUrl,
+        fileSize,
+        mimeType,
+        provenanceMetadata,
+      } = req.body;
+
+      if (!title || !description || !mediaUrl) {
+        return res.status(400).json({ success: false, error: 'Title, description, and mediaUrl are required.' });
+      }
+
+      const doc = await createHeritageDocument({
+        tenantId,
+        title,
+        description,
+        category,
+        accessLevel,
+        mediaUrl,
+        thumbnailUrl,
+        fileSize: fileSize ? parseInt(fileSize, 10) : undefined,
+        mimeType,
+        provenanceMetadata,
+        uploadedByIdentityId,
+      });
+
+      res.json({ success: true, document: doc });
+    } catch (err: any) {
+      console.error('API Error in POST /api/heritage/documents:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/heritage/collections', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      await seedBaselineHeritageIfEmpty();
+      const collections = await getHeritageCollections(tenantId);
+      res.json({ success: true, count: collections.length, collections });
+    } catch (err: any) {
+      console.error('API Error in GET /api/heritage/collections:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // =================== PHASE 17: PROFESSIONAL NETWORK & BUSINESS DIRECTORY ===================
+
+  app.get('/api/network/businesses', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      const industry = req.query.industry as string | undefined;
+      await seedBaselineNetworkIfEmpty();
+      const businesses = await getAlumniBusinesses(tenantId, industry);
+      res.json({ success: true, count: businesses.length, businesses });
+    } catch (err: any) {
+      console.error('API Error in GET /api/network/businesses:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/network/businesses', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const ownerIdentityId = req.securityContext?.identity.id;
+      const {
+        tenantId = 'tenant_ags_abeokuta',
+        businessName,
+        industry,
+        description,
+        website,
+        businessEmail,
+        businessPhone,
+        address,
+        classSetId,
+      } = req.body;
+
+      if (!businessName || !industry || !description || !businessEmail) {
+        return res.status(400).json({ success: false, error: 'Business name, industry, description, and businessEmail are required.' });
+      }
+
+      const business = await createAlumniBusiness({
+        tenantId,
+        ownerIdentityId,
+        businessName,
+        industry,
+        description,
+        website,
+        businessEmail,
+        businessPhone,
+        address,
+        classSetId,
+      });
+
+      res.json({ success: true, business });
+    } catch (err: any) {
+      console.error('API Error in POST /api/network/businesses:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/network/mentorship/programs', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      await seedBaselineNetworkIfEmpty();
+      const programs = await getMentorshipPrograms(tenantId);
+      res.json({ success: true, count: programs.length, programs });
+    } catch (err: any) {
+      console.error('API Error in GET /api/network/mentorship/programs:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/network/mentorship/pairs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const menteeIdentityId = req.securityContext?.identity.id;
+      const { programId, mentorIdentityId, focusArea } = req.body;
+
+      if (!programId || !mentorIdentityId || !focusArea || !menteeIdentityId) {
+        return res.status(400).json({ success: false, error: 'Program ID, mentor identity, and focus area are required.' });
+      }
+
+      const pair = await createMentorshipPair({
+        programId,
+        mentorIdentityId,
+        menteeIdentityId,
+        focusArea,
+      });
+
+      res.json({ success: true, pair });
+    } catch (err: any) {
+      console.error('API Error in POST /api/network/mentorship/pairs:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/network/careers', async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req.query.tenantId as string) || 'tenant_ags_abeokuta';
+      const employmentType = req.query.employmentType as string | undefined;
+      await seedBaselineNetworkIfEmpty();
+      const opportunities = await getCareerOpportunities(tenantId, employmentType);
+      res.json({ success: true, count: opportunities.length, opportunities });
+    } catch (err: any) {
+      console.error('API Error in GET /api/network/careers:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/network/careers', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const postedByIdentityId = req.securityContext?.identity.id;
+      const {
+        tenantId = 'tenant_ags_abeokuta',
+        title,
+        companyName,
+        location,
+        employmentType,
+        description,
+        applicationUrl,
+        contactEmail,
+      } = req.body;
+
+      if (!title || !companyName || !location || !description || !contactEmail) {
+        return res.status(400).json({ success: false, error: 'Missing required career opportunity fields.' });
+      }
+
+      const opp = await createCareerOpportunity({
+        tenantId,
+        postedByIdentityId,
+        title,
+        companyName,
+        location,
+        employmentType,
+        description,
+        applicationUrl,
+        contactEmail,
+      });
+
+      res.json({ success: true, opportunity: opp });
+    } catch (err: any) {
+      console.error('API Error in POST /api/network/careers:', err);
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
   // Mount Vite or static files
   if (!isProduction) {
     const vite = await createViteServer({
@@ -1629,6 +2316,21 @@ async function startServer() {
     console.log(`AGSOBA Enterprise Platform server listening on port ${PORT}`);
     seedBaselineEventsIfEmpty().catch((err) => {
       console.error('Error during baseline event seeding:', err);
+    });
+    seedBaselineFinancesIfEmpty().catch((err) => {
+      console.error('Error during baseline financial seeding:', err);
+    });
+    seedBaselineWelfareIfEmpty().catch((err) => {
+      console.error('Error during baseline welfare seeding:', err);
+    });
+    seedBaselineProjectsIfEmpty().catch((err) => {
+      console.error('Error during baseline projects seeding:', err);
+    });
+    seedBaselineHeritageIfEmpty().catch((err) => {
+      console.error('Error during baseline heritage seeding:', err);
+    });
+    seedBaselineNetworkIfEmpty().catch((err) => {
+      console.error('Error during baseline network seeding:', err);
     });
   });
 }

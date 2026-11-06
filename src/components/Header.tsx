@@ -20,7 +20,12 @@ export const Header: React.FC<HeaderProps> = ({
   const { activeTenant } = useTenant();
 
   const tabs = [
-    { id: 'events-reunions', label: '12. Events & Reunions (Active)' },
+    { id: 'digital-network', label: '17. Professional Network (Active)' },
+    { id: 'digital-heritage', label: '16. Digital Heritage Archive' },
+    { id: 'projects-initiatives', label: '15. Projects & Initiatives' },
+    { id: 'confidential-welfare', label: '14. Confidential Welfare' },
+    { id: 'financial-management', label: '13. Financial Management' },
+    { id: 'events-reunions', label: '12. Events & Reunions' },
     { id: 'polls-voting', label: '11. Polls & Voting' },
     { id: 'meetings-governance', label: '10. Meetings & Resolutions' },
     { id: 'communications', label: '9. Communications Centre' },
@@ -36,10 +41,15 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'simulator', label: 'Class Set Lab' },
     { id: 'security', label: 'Security & STRIDE' },
     { id: 'governance', label: 'Governance Scope' },
-    { id: 'welfare-finance', label: 'Welfare & Finance' },
+    { id: 'welfare-finance', label: 'Welfare Specs' },
     { id: 'adrs', label: 'ADRs (001–008)' },
     { id: 'roadmap', label: '20-Phase Roadmap' },
-    { id: 'report-phase12', label: 'Phase 12 Report (Active)' },
+    { id: 'report-phase17', label: 'Phase 17 Report (Active)' },
+    { id: 'report-phase16', label: 'Phase 16 Report' },
+    { id: 'report-phase15', label: 'Phase 15 Report' },
+    { id: 'report-phase14', label: 'Phase 14 Report' },
+    { id: 'report-phase13', label: 'Phase 13 Report' },
+    { id: 'report-phase12', label: 'Phase 12 Report' },
     { id: 'report-phase11', label: 'Phase 11 Report' },
     { id: 'report-phase10', label: 'Phase 10 Report' },
     { id: 'report-phase9', label: 'Phase 9 Report' },
@@ -62,27 +72,27 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="bg-slate-950 text-white border-b border-slate-800 shadow-xl sticky top-0 z-50">
       {/* Top Notification Bar */}
-      <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-indigo-950 border-b border-amber-800/40 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-slate-950 border-b border-blue-800/40 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            PHASE 12 EVENTS &amp; REUNION MANAGEMENT COMPLETE
+            PHASE 17 PROFESSIONAL NETWORK &amp; BUSINESS DIRECTORY COMPLETE
           </span>
           <span className="text-slate-300 hidden sm:inline">
-            Active School: {currentSchoolName} ({currentAcronym}) • Multi-Tier Ticketing, Gate Check-In &amp; Reconciliation Verified
+            Active School: {currentSchoolName} ({currentAcronym}) • Verified Businesses &amp; Mentorship Schemes
           </span>
         </div>
         <div className="flex items-center gap-4 text-slate-300">
-          <span className="flex items-center gap-1.5 text-amber-400 font-mono">
+          <span className="flex items-center gap-1.5 text-blue-400 font-mono">
             <Palette className="w-3.5 h-3.5" />
             Theme: Dynamic ({currentAcronym})
           </span>
           <span className="flex items-center gap-1.5 text-slate-300 font-mono">
-            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <Database className="w-3.5 h-3.5 text-amber-400" />
             PostgreSQL: Live
           </span>
           <span className="bg-slate-800/80 px-2 py-0.5 rounded text-amber-300 font-medium border border-amber-500/30">
-            Awaiting Phase 13 Authorization
+            Awaiting Phase 18 Authorization
           </span>
         </div>
       </div>

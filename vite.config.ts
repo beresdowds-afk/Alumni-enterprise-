@@ -6,9 +6,15 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      global: 'globalThis',
+      'process.env': {},
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'nodeUtils': path.resolve(__dirname, 'src/lib/nodeUtilsPolyfill.ts'),
+        'util': path.resolve(__dirname, 'src/lib/nodeUtilsPolyfill.ts'),
       },
     },
     server: {

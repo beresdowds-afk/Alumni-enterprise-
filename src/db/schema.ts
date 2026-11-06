@@ -1,5 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -1065,5 +1066,661 @@ export const eventGalleryItems = pgTable(
     index('event_gallery_items_event_idx').on(table.eventId),
   ]
 );
+
+/**
+ * 36. FINANCIAL ACCOUNTS (Double-Entry Chart of Accounts)
+ * Structured accounts for Assets, Liabilities, Equity, Revenue, and Expenses.
+ */
+export const financialAccounts = pgTable(
+  'financial_accounts',
+  {
+    id: text('id').primaryKey(), // e.g. 'acc_dues_rev'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    associationId: text('association_id')
+      .notNull()
+      .references(() => associations.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(), // e.g. '4010'
+    name: text('name').notNull(), // e.g. 'Annual Dues Revenue'
+    accountType: text('account_type').notNull(), // 'ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'
+    currency: text('currency').notNull().default('NGN'),
+    isSystemDefault: boolean('is_system_default').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('financial_accounts_code_idx').on(table.tenantId, table.code),
+    index('financial_accounts_type_idx').on(table.tenantId, table.accountType),
+  ]
+);
+
+/**
+ * 37. DUES OBLIGATIONS (Member Annual Subscriptions & Levies)
+ * Tracks mandatory dues and special project levies assigned to alumni members.
+ */
+export const duesObligations = pgTable(
+  'dues_obligations',
+  {
+    id: text('id').primaryKey(), // e.g. 'dues_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    identityId: text('identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    classSetId: text('class_set_id').references(() => classSets.id, { onDelete: 'set null' }),
+    fiscalYear: integer('fiscal_year').notNull().default(2026),
+    title: text('title').notNull(), // 'AGSOBA 2026 Annual National Dues'
+    amountDue: integer('amount_due').notNull(), // in kobo (NGN)
+    amountPaid: integer('amount_paid').notNull().default(0), // in kobo (NGN)
+    status: text('status').notNull().default('UNPAID'), // 'UNPAID', 'PARTIAL', 'PAID', 'WAIVED'
+    dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('dues_obligations_member_year_idx').on(table.identityId, table.fiscalYear),
+    index('dues_obligations_status_idx').on(table.tenantId, table.status),
+  ]
+);
+
+/**
+ * 38. FINANCIAL TRANSACTIONS (Immutable Double-Entry Ledger Journal)
+ * STRICT IMMUTABILITY RULE: UPDATE and DELETE operations are forbidden at database level.
+ * Reversals must be executed via distinct adjusting journal entries.
+ */
+export const financialTransactions = pgTable(
+  'financial_transactions',
+  {
+    id: text('id').primaryKey(), // e.g. 'txn_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    associationId: text('association_id')
+      .notNull()
+      .references(() => associations.id, { onDelete: 'cascade' }),
+    debitAccountId: text('debit_account_id')
+      .notNull()
+      .references(() => financialAccounts.id),
+    creditAccountId: text('credit_account_id')
+      .notNull()
+      .references(() => financialAccounts.id),
+    amount: integer('amount').notNull(), // in kobo
+    currency: text('currency').notNull().default('NGN'),
+    description: text('description').notNull(),
+    referenceId: text('reference_id'), // e.g. payment ref or dues obligation id
+    idempotencyKey: text('idempotency_key').notNull().unique(), // UUIDv4 idempotency key
+    recordedByIdentityId: text('recorded_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    metadata: jsonb('metadata').notNull().default({}),
+    postedAt: timestamp('posted_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('financial_transactions_idempotency_idx').on(table.idempotencyKey),
+    index('financial_transactions_tenant_date_idx').on(table.tenantId, table.postedAt),
+    index('financial_transactions_ref_idx').on(table.referenceId),
+  ]
+);
+
+/**
+ * 39. PAYMENT GATEWAY LOGS (Paystack / Flutterwave Secure Webhook Audit Trail)
+ * Stores raw webhook payloads, HMAC SHA-512 signatures, and idempotency states.
+ * Guarantees server-side payment verification (no client-declared success).
+ */
+export const paymentGatewayLogs = pgTable(
+  'payment_gateway_logs',
+  {
+    id: text('id').primaryKey(), // e.g. 'wh_xxx'
+    gatewayName: text('gateway_name').notNull().default('PAYSTACK'), // 'PAYSTACK', 'FLUTTERWAVE'
+    eventType: text('eventType').notNull(), // 'charge.success', 'transfer.success'
+    payloadJson: jsonb('payload_json').notNull(),
+    hmacSignature: text('hmac_signature').notNull(),
+    verificationStatus: text('verification_status').notNull().default('VERIFIED_SUCCESS'), // 'VERIFIED_SUCCESS', 'SIGNATURE_MISMATCH', 'DUPLICATE_IDEMPOTENCY', 'PROCESSING_FAILED'
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('payment_gateway_logs_idempotency_idx').on(table.idempotencyKey),
+    index('payment_gateway_logs_gateway_status_idx').on(table.gatewayName, table.verificationStatus),
+  ]
+);
+
+/**
+ * 40. PLEDGES (Development Project & Association Pledges)
+ * Distinct from cash received. Tracks member commitments and fulfillment progress.
+ */
+export const pledges = pgTable(
+  'pledges',
+  {
+    id: text('id').primaryKey(), // e.g. 'pld_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    identityId: text('identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    classSetId: text('class_set_id').references(() => classSets.id, { onDelete: 'set null' }),
+    projectTitle: text('project_title').notNull(), // 'AGSOBA 100th Anniversary Hall Restoration'
+    amountPledged: integer('amount_pledged').notNull(), // in kobo
+    amountFulfilled: integer('amount_fulfilled').notNull().default(0), // in kobo
+    status: text('status').notNull().default('PLEDGED'), // 'PLEDGED', 'PARTIAL_FULFILLED', 'FULFILLED', 'CANCELLED'
+    targetDate: timestamp('target_date', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('pledges_tenant_status_idx').on(table.tenantId, table.status),
+    index('pledges_identity_idx').on(table.identityId),
+  ]
+);
+
+/**
+ * 41. EXPENSE REQUISITIONS (Multi-Level Approval Expense Workflow)
+ * Requisitions require hierarchical approval (Initiator -> Treasurer -> President -> Disbursed).
+ */
+export const expenseRequisitions = pgTable(
+  'expense_requisitions',
+  {
+    id: text('id').primaryKey(), // e.g. 'exp_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    associationId: text('association_id')
+      .notNull()
+      .references(() => associations.id, { onDelete: 'cascade' }),
+    requestedByIdentityId: text('requested_by_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    amount: integer('amount').notNull(), // in kobo
+    category: text('category').notNull().default('OPERATIONAL'), // 'OPERATIONAL', 'MAINTENANCE', 'WELFARE', 'EVENT', 'CAPITAL_PROJECT'
+    status: text('status').notNull().default('SUBMITTED'), // 'SUBMITTED', 'TREASURER_APPROVED', 'PRESIDENT_APPROVED', 'DISBURSED', 'REJECTED'
+    treasurerApprovedByIdentityId: text('treasurer_approved_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    presidentApprovedByIdentityId: text('president_approved_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    disbursedByIdentityId: text('disbursed_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    rejectionReason: text('rejection_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('expense_requisitions_tenant_status_idx').on(table.tenantId, table.status),
+  ]
+);
+
+/**
+ * 42. WELFARE PROGRAMS (Distress Funds & Medical Grant Categories)
+ * Configurable welfare funds with ring-fenced budgets (e.g. 'AGSOBA Medical Emergency Fund').
+ */
+export const welfarePrograms = pgTable(
+  'welfare_programs',
+  {
+    id: text('id').primaryKey(), // e.g. 'wprog_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    associationId: text('association_id')
+      .notNull()
+      .references(() => associations.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(), // 'AGSOBA National Emergency Medical & Bereavement Fund'
+    description: text('description').notNull(),
+    allocatedBudget: integer('allocated_budget').notNull().default(100000000), // in kobo (NGN 1,000,000)
+    disbursedTotal: integer('disbursed_total').notNull().default(0), // in kobo
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'SUSPENDED', 'CLOSED'
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('welfare_programs_tenant_status_idx').on(table.tenantId, table.status),
+  ]
+);
+
+/**
+ * 43. WELFARE CASES (Confidential Distress Claims & Case File Vault)
+ * STRICT PRIVACY CONSTITUTION:
+ * Cases are air-gapped from general alumni directory and public reports.
+ * Only authorized Welfare Committee members and case beneficiaries have read access.
+ */
+export const welfareCases = pgTable(
+  'welfare_cases',
+  {
+    id: text('id').primaryKey(), // e.g. 'wcase_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    programId: text('program_id')
+      .notNull()
+      .references(() => welfarePrograms.id, { onDelete: 'cascade' }),
+    beneficiaryIdentityId: text('beneficiary_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    submittedByIdentityId: text('submitted_by_identity_id')
+      .references(() => identities.id, { onDelete: 'set null' }),
+    category: text('category').notNull().default('MEDICAL_EMERGENCY'), // 'MEDICAL_EMERGENCY', 'BEREAVEMENT', 'DISTRESS_RELIEF', 'EDUCATIONAL_GRANT'
+    summary: text('summary').notNull(),
+    confidentialCaseNotes: text('confidential_case_notes').notNull(), // Encrypted / strictly restricted notes
+    requestedAmount: integer('requested_amount').notNull(), // in kobo
+    approvedAmount: integer('approved_amount').notNull().default(0), // in kobo
+    status: text('status').notNull().default('SUBMITTED'), // 'SUBMITTED', 'UNDER_REVIEW', 'COMMITTEE_APPROVED', 'DISBURSED', 'REJECTED', 'CLOSED'
+    anonymizedReferenceCode: text('anonymized_reference_code').notNull().unique(), // e.g. 'WLF-RELIEF-2026-X77' for public ledger tracing
+    closureNotes: text('closure_notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('welfare_cases_anon_ref_idx').on(table.anonymizedReferenceCode),
+    index('welfare_cases_tenant_status_idx').on(table.tenantId, table.status),
+    index('welfare_cases_beneficiary_idx').on(table.beneficiaryIdentityId),
+  ]
+);
+
+/**
+ * 44. WELFARE CASE REVIEWS (Multi-Officer Welfare Committee Review Log)
+ * Auditable votes and recommendations by authorized welfare officers.
+ */
+export const welfareCaseReviews = pgTable(
+  'welfare_case_reviews',
+  {
+    id: text('id').primaryKey(), // e.g. 'wrev_xxx'
+    caseId: text('case_id')
+      .notNull()
+      .references(() => welfareCases.id, { onDelete: 'cascade' }),
+    reviewerIdentityId: text('reviewer_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    recommendation: text('recommendation').notNull().default('APPROVE'), // 'APPROVE', 'REQUEST_INFO', 'REJECT'
+    recommendedAmount: integer('recommended_amount').notNull().default(0), // in kobo
+    reviewComments: text('review_comments').notNull(),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('welfare_case_reviews_case_idx').on(table.caseId),
+  ]
+);
+
+/**
+ * 45. WELFARE DISBURSEMENTS (Emergency Financial Grant Payouts)
+ * Links approved welfare cases to financial ledger transaction entries using anonymized references.
+ */
+export const welfareDisbursements = pgTable(
+  'welfare_disbursements',
+  {
+    id: text('id').primaryKey(), // e.g. 'wdis_xxx'
+    caseId: text('case_id')
+      .notNull()
+      .unique()
+      .references(() => welfareCases.id, { onDelete: 'cascade' }),
+    disbursedByIdentityId: text('disbursed_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    amountDisbursed: integer('amount_disbursed').notNull(), // in kobo
+    bankReference: text('bank_reference').notNull(),
+    disbursedAt: timestamp('disbursed_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('welfare_disbursements_case_idx').on(table.caseId),
+  ]
+);
+
+/**
+ * 46. WELFARE ACCESS LOGS (Mandatory Read-Access Security Audit Trail)
+ * Enforces zero-trust policy: every query accessing confidential welfare records creates an immutable access log entry.
+ */
+export const welfareAccessLogs = pgTable(
+  'welfare_access_logs',
+  {
+    id: text('id').primaryKey(), // e.g. 'walog_xxx'
+    caseId: text('case_id')
+      .notNull()
+      .references(() => welfareCases.id, { onDelete: 'cascade' }),
+    accessorIdentityId: text('accessor_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    accessReason: text('access_reason').notNull().default('COMMITTEE_REVIEW'), // 'COMMITTEE_REVIEW', 'FINANCIAL_AUDIT', 'BENEFICIARY_INQUIRY'
+    clientIpHash: text('client_ip_hash'),
+    accessedAt: timestamp('accessed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('welfare_access_logs_case_idx').on(table.caseId),
+    index('welfare_access_logs_accessor_idx').on(table.accessorIdentityId),
+  ]
+);
+
+/**
+ * 47. DEVELOPMENT PROJECTS (School & Alumni Capital Initiatives)
+ * Supports infrastructure proposals, approved budgets, capital campaigns, and locked financial baselines.
+ */
+export const developmentProjects = pgTable(
+  'development_projects',
+  {
+    id: text('id').primaryKey(), // e.g. 'proj_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    associationId: text('association_id')
+      .notNull()
+      .references(() => associations.id, { onDelete: 'cascade' }),
+    classSetId: text('class_set_id').references(() => classSets.id, { onDelete: 'set null' }), // Optional: set-specific project (e.g. 8388 Centenary gate)
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    category: text('category').notNull().default('INFRASTRUCTURE'), // 'INFRASTRUCTURE', 'SCHOLARSHIP', 'SPORTS', 'ACADEMIC_EQUIPMENT', 'HISTORICAL_RESTORATION'
+    status: text('status').notNull().default('PROPOSED'), // 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'MILESTONE_AUDIT', 'COMPLETED', 'SUSPENDED'
+    budgetApprovedKobo: bigint('budget_approved_kobo', { mode: 'number' }).notNull().default(0), // Locked once approved
+    fundsRaisedKobo: bigint('funds_raised_kobo', { mode: 'number' }).notNull().default(0),
+    fundsDisbursedKobo: bigint('funds_disbursed_kobo', { mode: 'number' }).notNull().default(0),
+    isBudgetLocked: boolean('is_budget_locked').notNull().default(false),
+    proposedByIdentityId: text('proposed_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    approvedByIdentityId: text('approved_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    startDate: timestamp('start_date', { withTimezone: true }),
+    targetCompletionDate: timestamp('target_completion_date', { withTimezone: true }),
+    actualCompletionDate: timestamp('actual_completion_date', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('dev_projects_tenant_status_idx').on(table.tenantId, table.status),
+    index('dev_projects_assoc_idx').on(table.associationId),
+    index('dev_projects_class_set_idx').on(table.classSetId),
+  ]
+);
+
+/**
+ * 48. PROJECT MILESTONES (Deliverables & Progress Verification)
+ * Step-by-step deliverable tracking with physical/financial audit sign-off.
+ */
+export const projectMilestones = pgTable(
+  'project_milestones',
+  {
+    id: text('id').primaryKey(), // e.g. 'pmil_xxx'
+    projectId: text('project_id')
+      .notNull()
+      .references(() => developmentProjects.id, { onDelete: 'cascade' }),
+    milestoneOrder: integer('milestone_order').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    allocatedBudgetKobo: bigint('allocated_budget_kobo', { mode: 'number' }).notNull().default(0),
+    disbursedBudgetKobo: bigint('disbursed_budget_kobo', { mode: 'number' }).notNull().default(0),
+    percentageWeight: integer('percentage_weight').notNull().default(0), // 0 to 100
+    status: text('status').notNull().default('PENDING'), // 'PENDING', 'IN_PROGRESS', 'SUBMITTED_FOR_AUDIT', 'AUDIT_APPROVED', 'COMPLETED'
+    targetDate: timestamp('target_date', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    auditNotes: text('audit_notes'),
+    auditedByIdentityId: text('audited_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    auditedAt: timestamp('audited_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('project_milestones_project_order_idx').on(table.projectId, table.milestoneOrder),
+    index('project_milestones_status_idx').on(table.projectId, table.status),
+  ]
+);
+
+/**
+ * 49. PROJECT DONATIONS (Contributions & Donor Wall Registry)
+ * Records individual and corporate project donations linked to the financial ledger with recognition options.
+ */
+export const projectDonations = pgTable(
+  'project_donations',
+  {
+    id: text('id').primaryKey(), // e.g. 'pdon_xxx'
+    projectId: text('project_id')
+      .notNull()
+      .references(() => developmentProjects.id, { onDelete: 'cascade' }),
+    donorIdentityId: text('donor_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    donorNameOverride: text('donor_name_override'), // For anonymous or custom dedication
+    classSetId: text('class_set_id').references(() => classSets.id, { onDelete: 'set null' }),
+    amountKobo: bigint('amount_kobo', { mode: 'number' }).notNull(),
+    currency: text('currency').notNull().default('NGN'),
+    recognitionTier: text('recognition_tier').notNull().default('CONTRIBUTOR'), // 'SUPPORTER', 'BUILDER', 'BENEFACTOR', 'PATRON', 'GRAND_PATRON'
+    isAnonymous: boolean('is_anonymous').notNull().default(false),
+    pledgeId: text('pledge_id').references(() => pledges.id, { onDelete: 'set null' }), // Optional linkage to existing pledge
+    paymentReference: text('payment_reference').notNull().unique(), // e.g. Paystack ref or bank teller
+    status: text('status').notNull().default('CONFIRMED'), // 'PENDING', 'CONFIRMED', 'RECONCILED', 'CANCELLED'
+    donorMessage: text('donor_message'),
+    receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('project_donations_pay_ref_idx').on(table.paymentReference),
+    index('project_donations_project_idx').on(table.projectId),
+    index('project_donations_donor_idx').on(table.donorIdentityId),
+    index('project_donations_tier_idx').on(table.projectId, table.recognitionTier),
+  ]
+);
+
+/**
+ * 50. PROJECT DISBURSEMENTS (Milestone Payments & Contractor Payouts)
+ * Strict link between approved project milestones and financial journal ledger entries.
+ */
+export const projectDisbursements = pgTable(
+  'project_disbursements',
+  {
+    id: text('id').primaryKey(), // e.g. 'pdis_xxx'
+    projectId: text('project_id')
+      .notNull()
+      .references(() => developmentProjects.id, { onDelete: 'cascade' }),
+    milestoneId: text('milestone_id').references(() => projectMilestones.id, { onDelete: 'set null' }),
+    payeeName: text('payee_name').notNull(), // Contractor, vendor, or project supervisor
+    amountKobo: bigint('amount_kobo', { mode: 'number' }).notNull(),
+    currency: text('currency').notNull().default('NGN'),
+    bankReference: text('bank_reference').notNull(),
+    disbursedByIdentityId: text('disbursed_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    requisitionId: text('requisition_id').references(() => expenseRequisitions.id, { onDelete: 'set null' }),
+    financialTransactionId: text('financial_transaction_id').references(() => financialTransactions.id, { onDelete: 'set null' }),
+    notes: text('notes'),
+    disbursedAt: timestamp('disbursed_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('project_disbursements_project_idx').on(table.projectId),
+    index('project_disbursements_milestone_idx').on(table.milestoneId),
+  ]
+);
+
+/**
+ * 51. HERITAGE DOCUMENTS (Digital Archive & Historical Records)
+ * Stores digitized historical photos, magazines, founder speeches, oral histories, blueprints, and school registers with provenance metadata and SHA-256 integrity checksums.
+ */
+export const heritageDocuments = pgTable(
+  'heritage_documents',
+  {
+    id: text('id').primaryKey(), // e.g. 'hdoc_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    category: text('category').notNull().default('HISTORICAL_PHOTO'), // 'HISTORICAL_PHOTO', 'MAGAZINE_PUBLICATION', 'FOUNDERS_SPEECH', 'ORAL_HISTORY_AUDIO', 'CAMPUS_BLUEPRINT', 'STUDENT_REGISTER', 'ARCHIVAL_MANUSCRIPT'
+    accessLevel: text('access_level').notNull().default('PUBLIC'), // 'PUBLIC', 'VERIFIED_ALUMNI', 'EXECUTIVE_ONLY', 'RESTRICTED'
+    mediaUrl: text('media_url').notNull(),
+    thumbnailUrl: text('thumbnail_url'),
+    fileSize: integer('file_size').notNull().default(0), // in bytes
+    mimeType: text('mime_type').notNull().default('image/jpeg'),
+    checksumSha256: text('checksum_sha256').notNull(), // Integrity seal hash
+    provenanceMetadata: jsonb('provenance_metadata').notNull().default({}), // author, accession date, donor, archival source, historical era
+    uploadedByIdentityId: text('uploaded_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    viewCount: integer('view_count').notNull().default(0),
+    downloadCount: integer('download_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('heritage_documents_tenant_category_idx').on(table.tenantId, table.category),
+    index('heritage_documents_access_idx').on(table.accessLevel),
+    uniqueIndex('heritage_documents_checksum_idx').on(table.checksumSha256),
+  ]
+);
+
+/**
+ * 52. HERITAGE COLLECTIONS (Curated Archival Exhibitions)
+ */
+export const heritageCollections = pgTable(
+  'heritage_collections',
+  {
+    id: text('id').primaryKey(), // e.g. 'hcol_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    curatorIdentityId: text('curator_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    isFeatured: boolean('is_featured').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('heritage_collections_tenant_idx').on(table.tenantId),
+  ]
+);
+
+/**
+ * 53. HERITAGE COLLECTION ITEMS (Mapping Documents to Curated Collections)
+ */
+export const heritageCollectionItems = pgTable(
+  'heritage_collection_items',
+  {
+    id: text('id').primaryKey(), // e.g. 'hitem_xxx'
+    collectionId: text('collection_id')
+      .notNull()
+      .references(() => heritageCollections.id, { onDelete: 'cascade' }),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => heritageDocuments.id, { onDelete: 'cascade' }),
+    itemOrder: integer('item_order').notNull().default(1),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('heritage_collection_item_unique_idx').on(table.collectionId, table.documentId),
+    index('heritage_collection_items_collection_idx').on(table.collectionId),
+  ]
+);
+
+/**
+ * 54. HERITAGE ACCESS AUDIT LOGS (Zero-Trust Archival Access Trail)
+ */
+export const heritageAccessAuditLogs = pgTable(
+  'heritage_access_audit_logs',
+  {
+    id: text('id').primaryKey(), // e.g. 'halog_xxx'
+    documentId: text('document_id')
+      .notNull()
+      .references(() => heritageDocuments.id, { onDelete: 'cascade' }),
+    accessorIdentityId: text('accessor_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    accessType: text('access_type').notNull().default('VIEW'), // 'VIEW', 'DOWNLOAD', 'METADATA_INSPECT'
+    clientIpHash: text('client_ip_hash'),
+    accessedAt: timestamp('accessed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('heritage_access_logs_document_idx').on(table.documentId),
+    index('heritage_access_logs_accessor_idx').on(table.accessorIdentityId),
+  ]
+);
+
+/**
+ * 55. ALUMNI BUSINESSES (Verified Business & Enterprise Directory)
+ */
+export const alumniBusinesses = pgTable(
+  'alumni_businesses',
+  {
+    id: text('id').primaryKey(), // e.g. 'biz_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    ownerIdentityId: text('owner_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    businessName: text('business_name').notNull(),
+    industry: text('industry').notNull(),
+    description: text('description').notNull(),
+    website: text('website'),
+    businessEmail: text('business_email').notNull(),
+    businessPhone: text('business_phone'),
+    address: text('address'),
+    verificationStatus: text('verification_status').notNull().default('PENDING_VERIFICATION'), // 'PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'
+    classSetId: text('class_set_id').references(() => classSets.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('alumni_businesses_tenant_industry_idx').on(table.tenantId, table.industry),
+    index('alumni_businesses_status_idx').on(table.verificationStatus),
+  ]
+);
+
+/**
+ * 56. MENTORSHIP PROGRAMS (Structured Mentorship Schemes)
+ */
+export const mentorshipPrograms = pgTable(
+  'mentorship_programs',
+  {
+    id: text('id').primaryKey(), // e.g. 'mprog_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'CLOSED'
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('mentorship_programs_tenant_idx').on(table.tenantId),
+  ]
+);
+
+/**
+ * 57. MENTORSHIP PAIRS (Mentor-Mentee Pairing Queue & Relationships)
+ */
+export const mentorshipPairs = pgTable(
+  'mentorship_pairs',
+  {
+    id: text('id').primaryKey(), // e.g. 'mpair_xxx'
+    programId: text('program_id')
+      .notNull()
+      .references(() => mentorshipPrograms.id, { onDelete: 'cascade' }),
+    mentorIdentityId: text('mentor_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    menteeIdentityId: text('mentee_identity_id')
+      .notNull()
+      .references(() => identities.id, { onDelete: 'cascade' }),
+    focusArea: text('focus_area').notNull(),
+    status: text('status').notNull().default('PENDING_MATCH'), // 'PENDING_MATCH', 'ACTIVE', 'COMPLETED', 'DECLINED'
+    meetingNotes: text('meeting_notes'),
+    pairedAt: timestamp('paired_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('mentorship_pairs_program_idx').on(table.programId),
+    index('mentorship_pairs_mentor_idx').on(table.mentorIdentityId),
+    index('mentorship_pairs_mentee_idx').on(table.menteeIdentityId),
+  ]
+);
+
+/**
+ * 58. CAREER OPPORTUNITIES (Jobs, Internships, RFPs, and Collaboration Board)
+ */
+export const careerOpportunities = pgTable(
+  'career_opportunities',
+  {
+    id: text('id').primaryKey(), // e.g. 'copp_xxx'
+    tenantId: text('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    postedByIdentityId: text('posted_by_identity_id').references(() => identities.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    companyName: text('company_name').notNull(),
+    location: text('location').notNull(),
+    employmentType: text('employment_type').notNull().default('FULL_TIME'), // 'FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT', 'REMOTE'
+    description: text('description').notNull(),
+    applicationUrl: text('application_url'),
+    contactEmail: text('contact_email').notNull(),
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'CLOSED'
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('career_opportunities_tenant_type_idx').on(table.tenantId, table.employmentType),
+    index('career_opportunities_status_idx').on(table.status),
+  ]
+);
+
 
 
